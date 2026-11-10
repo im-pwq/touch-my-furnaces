@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "touch-my-furnaces",
+	"version": "${version}",
+	"name": "Touch My Furnaces",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/touch-my-furnaces/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"pwq.tmf.TouchMyFurnaces"
+		],
+		"client": [
+			"pwq.tmf.client.TouchMyFurnacesClient"
+		]
+	},
+	"mixins": [
+		"touch-my-furnaces.mixins.json",
+		{
+			"config": "touch-my-furnaces.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
