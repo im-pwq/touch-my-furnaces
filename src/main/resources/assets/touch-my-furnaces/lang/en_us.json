@@ -1,0 +1,5 @@
+{
+  "tmf.actionbar.in": "+%1$s× %2$s",
+  "tmf.actionbar.out": "-%1$s× %2$s",
+  "tmf.actionbar.slot_occupied": "Slot is occupied"
+}

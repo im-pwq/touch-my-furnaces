@@ -40,8 +40,9 @@ public final class FurnaceActions {
 	public static void useWithItem(Player player, AbstractFurnaceBlockEntity furnace, ItemStack held) {
 		int slot = isSmeltable(furnace, held) ? INPUT : FUEL;
 		int moved = insert(furnace, slot, held);
-				if (moved == 0) {
-			actionBar(player, Component.literal("Слот занят").withStyle(ChatFormatting.GRAY));
+						if (moved == 0) {
+			actionBar(player, Component.translatable("tmf.actionbar.slot_occupied")
+				.withStyle(ChatFormatting.GRAY));
 			return;
 		}
 		ItemStack movedStack = held.copyWithCount(moved);
@@ -100,12 +101,7 @@ public final class FurnaceActions {
 				into ? 0.5f : 0.8f,
 				into ? 0.75f : 1.35f);
 		}
-		Component msg = Component.literal(into ? "+ " : "- ")
-			.append(stack.getCount() + "× ")
-			.append(stack.getHoverName())
-			.withStyle(into ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
-			actionBar(player, msg);
-	}
+		Component msg = Component .translatable(into ? "tmf.actionbar.in" : "tmf.actionbar.out", stack.getCount(), stack.getHoverName()) .withStyle(into ? ChatFormatting.GREEN : ChatFormatting.YELLOW); actionBar(player, msg);
 
 	private static int insert(AbstractFurnaceBlockEntity f, int slot, ItemStack held) {
 		ItemStack cur = f.getItem(slot);
