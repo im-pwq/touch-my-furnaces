@@ -40,7 +40,7 @@ public final class FurnaceActions {
 	public static void useWithItem(Player player, AbstractFurnaceBlockEntity furnace, ItemStack held) {
 		int slot = isSmeltable(furnace, held) ? INPUT : FUEL;
 		int moved = insert(furnace, slot, held);
-						if (moved == 0) {
+		if (moved == 0) {
 			actionBar(player, Component.translatable("tmf.actionbar.slot_occupied")
 				.withStyle(ChatFormatting.GRAY));
 			return;
@@ -77,7 +77,14 @@ public final class FurnaceActions {
 		feedback(f, player, got, false);
 		return true;
 	}
-	private static void actionBar(Player player, Component msg) { if (player instanceof ServerPlayer sp) { sp.sendSystemMessage(msg, true); } else { player.sendOverlayMessage(msg); } }
+
+	private static void actionBar(Player player, Component msg) {
+		if (player instanceof ServerPlayer sp) {
+			sp.sendSystemMessage(msg, true);
+		} else {
+			player.sendOverlayMessage(msg);
+		}
+	}
 
 	private static ItemStack takeSlot(Player player, AbstractFurnaceBlockEntity f, int slot) {
 		ItemStack stack = f.getItem(slot);
@@ -101,7 +108,12 @@ public final class FurnaceActions {
 				into ? 0.5f : 0.8f,
 				into ? 0.75f : 1.35f);
 		}
-		Component msg = Component .translatable(into ? "tmf.actionbar.in" : "tmf.actionbar.out", stack.getCount(), stack.getHoverName()) .withStyle(into ? ChatFormatting.GREEN : ChatFormatting.YELLOW); actionBar(player, msg);
+		Component msg = Component
+			.translatable(into ? "tmf.actionbar.in" : "tmf.actionbar.out",
+				stack.getCount(), stack.getHoverName())
+			.withStyle(into ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
+		actionBar(player, msg);
+	}
 
 	private static int insert(AbstractFurnaceBlockEntity f, int slot, ItemStack held) {
 		ItemStack cur = f.getItem(slot);
