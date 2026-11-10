@@ -1,0 +1,21 @@
+{
+  "blocked": [
+    "*_door",
+    "*_trapdoor",
+    "*bucket",
+    "*_pickaxe",
+    "*_axe",
+    "*_shovel",
+    "*_hoe",
+    "*_sword",
+    "*_spear",
+    "*_helmet",
+    "*_chestplate",
+    "*_leggings",
+    "*_boots",
+    "*_horse_armor"
+  ],
+  "allowed": [
+    "minecraft:lava_bucket"
+  ]
+}
