@@ -1,6 +1,6 @@
 # Touch My Furnaces
 
-> For client-side, check [this](github.com/im-pwq/touch-my-furnaces/tree/client-side).
+> For client-side, check [this](https://github.com/im-pwq/touch-my-furnaces/tree/client-side).
 
 A Fabric mod that lets you load and empty furnaces without ever opening their GUI.
 
