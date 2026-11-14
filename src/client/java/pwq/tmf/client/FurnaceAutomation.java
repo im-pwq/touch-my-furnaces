@@ -1,15 +1,19 @@
 package pwq.tmf.client;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.MenuAccess;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Input;
@@ -145,8 +149,64 @@ public final class FurnaceAutomation {
 		}
 		int slot = clicks[clickIndex++];
 		if (slot >= 0 && slot < menu.slots.size()) {
-			client.gameMode.handleContainerInput(menu.containerId, slot, 0, ContainerInput.QUICK_MOVE, player);
+			clickAndReport(client, menu, player, slot);
 		}
+	}
+
+	/**
+	 * A single QUICK_MOVE. The local {@code menu.clicked} call already mutates the client-side
+	 * slots, so a before/after snapshot tells us exactly what moved and lets us show feedback.
+	 */
+	private static void clickAndReport(Minecraft client, AbstractFurnaceMenu menu, LocalPlayer player, int slot) {
+		ItemStack[] before = snapshot(menu);
+		client.gameMode.handleContainerInput(menu.containerId, slot, 0, ContainerInput.QUICK_MOVE, player);
+		report(player, menu, before);
+	}
+
+	private static void report(LocalPlayer player, AbstractFurnaceMenu menu, ItemStack[] before) {
+		int source = -1;
+		int moved = 0;
+		for (int i = 0; i < before.length; i++) {
+			int delta = before[i].getCount() - menu.getSlot(i).getItem().getCount();
+			if (delta > 0) {
+				source = i;
+				moved = delta;
+				break;
+			}
+		}
+		if (source < 0) {
+			// Nothing left the source: only the insert path has something useful to say.
+			if (!extracting) {
+				actionBar(player, Component.translatable("tmf.actionbar.slot_occupied")
+					.withStyle(ChatFormatting.GRAY));
+			}
+			return;
+		}
+		ItemStack movedStack = before[source].copyWithCount(moved);
+		playPickup(!extracting);
+		actionBar(player, Component
+			.translatable(extracting ? "tmf.actionbar.out" : "tmf.actionbar.in", moved, movedStack.getHoverName())
+			.withStyle(extracting ? ChatFormatting.YELLOW : ChatFormatting.GREEN));
+	}
+
+	private static ItemStack[] snapshot(AbstractFurnaceMenu menu) {
+		ItemStack[] items = new ItemStack[menu.slots.size()];
+		for (int i = 0; i < items.length; i++) {
+			items[i] = menu.getSlot(i).getItem().copy();
+		}
+		return items;
+	}
+
+	private static void actionBar(LocalPlayer player, Component message) {
+		player.sendOverlayMessage(message);
+	}
+
+	/** Client-side pickup blip on the UI channel, so the in-game "UI" volume slider controls it. */
+	private static void playPickup(boolean into) {
+		float volume = into ? 0.5f : 0.8f;
+		float pitch = into ? 0.75f : 1.35f;
+		Minecraft.getInstance().getSoundManager()
+			.play(SimpleSoundInstance.forUI(SoundEvents.ITEM_PICKUP, pitch, volume));
 	}
 
 	/** Slot of the selected hotbar stack inside the furnace menu (one click per tick). */
@@ -161,7 +221,7 @@ public final class FurnaceAutomation {
 		return new int[0];
 	}
 
-	/** Mirrors {@code FurnaceActions.takeOutput}: output, then the bucket exception, then input, then fuel. */
+	/** Output, then the bucket exception, then input, then fuel (the original take order). */
 	private static int[] planExtract(AbstractFurnaceMenu menu) {
 		if (!menu.getSlot(OUTPUT).getItem().isEmpty()) return new int[] { OUTPUT };
 		if (menu.getSlot(FUEL).getItem().is(Items.BUCKET)) return new int[] { FUEL };
@@ -169,7 +229,7 @@ public final class FurnaceAutomation {
 		return new int[] { FUEL };
 	}
 
-	/** Client-side twin of {@code FurnaceActions.accepts}: blacklist + smeltable/fuel. */
+	/** Blacklist + smeltable/fuel check, evaluated on the client. */
 	private static boolean accepts(Level level, AbstractFurnaceBlockEntity furnace, ItemStack held) {
 		if (Blacklist.isBlocked(held)) return false;
 		if (held.has(DataComponents.COOKING_FUEL)) return true;
