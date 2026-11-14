@@ -1,5 +1,13 @@
 {
   "tmf.actionbar.in": "+%1$s× %2$s",
   "tmf.actionbar.out": "-%1$s× %2$s",
-  "tmf.actionbar.slot_occupied": "Slot is occupied"
+  "tmf.actionbar.slot_occupied": "Slot is occupied",
+  "tmf.config.title": "Touch My Furnaces",
+  "tmf.config.category": "Furnaces",
+  "tmf.config.category.desc": "What the fast-load into the furnace ignores",
+  "tmf.config.blacklist": "Item blacklist",
+  "tmf.config.blacklist.desc": "Item IDs blocked from fast-loading. Masks work: minecraft:iron_door or *_door",
+  "tmf.config.whitelist": "Whitelist",
+  "tmf.config.whitelist.desc": "Item IDs allowed even if the blacklist blocks them"
+
 }

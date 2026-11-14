@@ -1,5 +1,13 @@
 {
   "tmf.actionbar.in": "+%1$s× %2$s",
   "tmf.actionbar.out": "-%1$s× %2$s",
-  "tmf.actionbar.slot_occupied": "Слот занят"
+  "tmf.actionbar.slot_occupied": "Слот занят",
+  "tmf.config.title": "Touch My Furnaces",
+  "tmf.config.category": "Печи",
+  "tmf.config.category.desc": "Что мод не даёт закидывать в печь",
+  "tmf.config.blacklist": "Чёрный список",
+  "tmf.config.blacklist.desc": "ID предметов, которые нельзя закидывать в печь. Маски поддерживаются: minecraft:iron_door или *_door",
+  "tmf.config.whitelist": "Белый список",
+  "tmf.config.whitelist.desc": "ID предметов, которые можно кидать в печь, даже если они в чёрном списке"
+
 }
