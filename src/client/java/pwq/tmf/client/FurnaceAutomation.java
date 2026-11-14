@@ -35,9 +35,14 @@ import pwq.tmf.Blacklist;
  * Client-only "invisible GUI" automation.
  *
  * <p>Shift + right-click on a furnace opens the real {@link AbstractFurnaceMenu} on the server,
- * hides the screen (see {@code GuiMixin}) and quick-moves the wanted slots. It never touches the
- * block entity directly: every move is a normal {@link ContainerInput#QUICK_MOVE} click, exactly
- * like a player shift-clicking in the GUI.
+ * hides the screen (see {@code GuiMixin}) and moves the wanted slots. It never touches the block
+ * entity directly: every move is an ordinary container click.
+ *
+ * <p>Insertion is a single {@link ContainerInput#QUICK_MOVE} of the held hotbar stack (vanilla
+ * routes it to the input or fuel slot). Extraction fills the <em>hotbar first</em>, then the main
+ * inventory: the output slot uses vanilla {@code QUICK_MOVE} (its slot range is already iterated
+ * in reverse, i.e. hotbar first), while the bucket/input/fuel slot is moved by hand with normal
+ * {@link ContainerInput#PICKUP} clicks, exactly like a player moving a stack to a chosen slot.
  */
 public final class FurnaceAutomation {
 	private static final int OPEN_TIMEOUT_TICKS = 20;
@@ -48,14 +53,23 @@ public final class FurnaceAutomation {
 	private static final int FUEL = 1;
 	private static final int OUTPUT = 2;
 
-	private enum Phase { IDLE, OPENING, CLICKING }
+	/** Player inventory inside the furnace menu: main 3..29, hotbar 30..38. */
+	private static final int MAIN_START = 3;
+	private static final int MAIN_END = 30;
+	private static final int HOTBAR_START = 30;
+	private static final int HOTBAR_END = 39;
+
+	private enum Phase { IDLE, OPENING, MOVING }
 
 	private static Phase phase = Phase.IDLE;
 	private static boolean suppressScreen;
 	private static boolean extracting;
 	private static int waitTicks;
-	private static int clickIndex;
-	private static int[] clicks;
+	/** Slot contents captured right before the first move, used to build the feedback diff. */
+	private static ItemStack[] before;
+	private static boolean sourceResolved;
+	private static int extractSource = -1;
+	private static boolean done;
 
 	private FurnaceAutomation() {}
 
@@ -84,8 +98,6 @@ public final class FurnaceAutomation {
 		phase = Phase.OPENING;
 		suppressScreen = true;
 		waitTicks = 0;
-		clickIndex = 0;
-		clicks = null;
 		openFurnace(player, hit);
 	}
 
@@ -114,23 +126,21 @@ public final class FurnaceAutomation {
 		}
 		switch (phase) {
 			case OPENING -> tickOpening(player);
-			case CLICKING -> tickClicking(client, player);
+			case MOVING -> tickMoving(client, player);
 			default -> { }
 		}
 	}
 
 	private static void tickOpening(LocalPlayer player) {
 		if (player.containerMenu instanceof AbstractFurnaceMenu menu && menu.containerId != 0) {
-			phase = Phase.CLICKING;
+			phase = Phase.MOVING;
 			waitTicks = CONTENT_DELAY_TICKS;
-			clicks = null;
-			clickIndex = 0;
 			return;
 		}
 		if (++waitTicks > OPEN_TIMEOUT_TICKS) reset();
 	}
 
-	private static void tickClicking(Minecraft client, LocalPlayer player) {
+	private static void tickMoving(Minecraft client, LocalPlayer player) {
 		if (!(player.containerMenu instanceof AbstractFurnaceMenu menu) || menu.containerId == 0) {
 			reset();
 			return;
@@ -139,54 +149,138 @@ public final class FurnaceAutomation {
 			waitTicks--;
 			return;
 		}
-		if (clicks == null) {
-			clicks = extracting ? planExtract(menu) : planInsert(menu, player);
-		}
-		if (clickIndex >= clicks.length) {
-			player.closeContainer();
-			reset();
+		if (before == null) before = snapshot(menu);
+		if (done) {
+			finish(menu, player);
 			return;
 		}
-		int slot = clicks[clickIndex++];
-		if (slot >= 0 && slot < menu.slots.size()) {
-			clickAndReport(client, menu, player, slot);
+		if (extracting) {
+			extractStep(client, menu, player);
+		} else {
+			insertStep(client, menu, player);
 		}
+	}
+
+	/** Insertion: quick-move the selected hotbar stack; vanilla routes it to input or fuel. */
+	private static void insertStep(Minecraft client, AbstractFurnaceMenu menu, LocalPlayer player) {
+		int slot = selectedHotbarSlot(menu, player);
+		if (slot >= 0) {
+			click(client, menu, player, slot, ContainerInput.QUICK_MOVE, 0);
+		}
+		done = true;
 	}
 
 	/**
-	 * A single QUICK_MOVE. The local {@code menu.clicked} call already mutates the client-side
-	 * slots, so a before/after snapshot tells us exactly what moved and lets us show feedback.
+	 * Extraction: the output slot first, then the bucket exception, then input, then fuel (the
+	 * original take order). Output rides vanilla {@code QUICK_MOVE}; the rest is moved by hand so
+	 * it lands in the hotbar before the main inventory.
 	 */
-	private static void clickAndReport(Minecraft client, AbstractFurnaceMenu menu, LocalPlayer player, int slot) {
-		ItemStack[] before = snapshot(menu);
-		client.gameMode.handleContainerInput(menu.containerId, slot, 0, ContainerInput.QUICK_MOVE, player);
-		report(player, menu, before);
+	private static void extractStep(Minecraft client, AbstractFurnaceMenu menu, LocalPlayer player) {
+		if (!sourceResolved) {
+			extractSource = pickExtractSource(menu);
+			sourceResolved = true;
+		}
+		if (extractSource < 0) {
+			done = true;
+			return;
+		}
+		if (extractSource == OUTPUT) {
+			if (!menu.getSlot(OUTPUT).getItem().isEmpty()) {
+				click(client, menu, player, OUTPUT, ContainerInput.QUICK_MOVE, 0);
+			}
+			done = true;
+			return;
+		}
+		moveHotbarFirst(client, menu, player, extractSource);
 	}
 
-	private static void report(LocalPlayer player, AbstractFurnaceMenu menu, ItemStack[] before) {
-		int source = -1;
+	/**
+	 * Picks the source stack up with a normal left-click and drops it into the first accepting
+	 * inventory slot, hotbar (30..38) before main (3..29). When nothing more fits, the remainder
+	 * goes back to the source slot, so the cursor is never left holding items.
+	 */
+	private static void moveHotbarFirst(Minecraft client, AbstractFurnaceMenu menu, LocalPlayer player, int source) {
+		ItemStack carried = menu.getCarried();
+		if (carried.isEmpty()) {
+			ItemStack src = menu.getSlot(source).getItem();
+			if (src.isEmpty()) {
+				done = true;
+				return;
+			}
+			int target = findTarget(menu, src);
+			if (target < 0) {
+				done = true;
+				return;
+			}
+			click(client, menu, player, source, ContainerInput.PICKUP, 0);
+			return;
+		}
+		int target = findTarget(menu, carried);
+		if (target < 0) {
+			// No room left anywhere: put the remainder back and stop.
+			click(client, menu, player, source, ContainerInput.PICKUP, 0);
+			done = true;
+			return;
+		}
+		click(client, menu, player, target, ContainerInput.PICKUP, 0);
+	}
+
+	/** First hotbar slot, then main inventory slot, that can take the stack. */
+	private static int findTarget(AbstractFurnaceMenu menu, ItemStack stack) {
+		for (int i = HOTBAR_START; i < HOTBAR_END; i++) {
+			if (canAccept(menu.getSlot(i), stack)) return i;
+		}
+		for (int i = MAIN_START; i < MAIN_END; i++) {
+			if (canAccept(menu.getSlot(i), stack)) return i;
+		}
+		return -1;
+	}
+
+	private static boolean canAccept(Slot slot, ItemStack stack) {
+		ItemStack current = slot.getItem();
+		if (current.isEmpty()) return slot.mayPlace(stack);
+		if (!ItemStack.isSameItemSameComponents(current, stack)) return false;
+		return current.getCount() < slot.getMaxStackSize(current);
+	}
+
+	private static void click(Minecraft client, AbstractFurnaceMenu menu, LocalPlayer player, int slot,
+			ContainerInput input, int button) {
+		client.gameMode.handleContainerInput(menu.containerId, slot, button, input, player);
+	}
+
+	private static void finish(AbstractFurnaceMenu menu, LocalPlayer player) {
+		report(menu, player);
+		player.closeContainer();
+		reset();
+	}
+
+	/**
+	 * Feedback, counted from the player's inventory side: extraction is what entered it, insertion
+	 * is what left it. Keys stay {@code tmf.actionbar.in} / {@code tmf.actionbar.out}, now read
+	 * from the inventory's point of view (in = into the inventory, out = out of it).
+	 */
+	private static void report(AbstractFurnaceMenu menu, LocalPlayer player) {
 		int moved = 0;
-		for (int i = 0; i < before.length; i++) {
-			int delta = before[i].getCount() - menu.getSlot(i).getItem().getCount();
-			if (delta > 0) {
-				source = i;
-				moved = delta;
-				break;
+		ItemStack sample = ItemStack.EMPTY;
+		for (int i = MAIN_START; i < menu.slots.size(); i++) {
+			int delta = menu.getSlot(i).getItem().getCount() - before[i].getCount();
+			if (extracting ? delta > 0 : delta < 0) {
+				moved += Math.abs(delta);
+				sample = extracting ? menu.getSlot(i).getItem() : before[i];
 			}
 		}
-		if (source < 0) {
-			// Nothing left the source: only the insert path has something useful to say.
+		if (moved <= 0) {
+			// Nothing moved: only the insert path has something useful to say.
 			if (!extracting) {
 				actionBar(player, Component.translatable("tmf.actionbar.slot_occupied")
 					.withStyle(ChatFormatting.GRAY));
 			}
 			return;
 		}
-		ItemStack movedStack = before[source].copyWithCount(moved);
 		playPickup(!extracting);
 		actionBar(player, Component
-			.translatable(extracting ? "tmf.actionbar.out" : "tmf.actionbar.in", moved, movedStack.getHoverName())
-			.withStyle(extracting ? ChatFormatting.YELLOW : ChatFormatting.GREEN));
+			.translatable(extracting ? "tmf.actionbar.in" : "tmf.actionbar.out", moved, sample.getHoverName())
+			.withStyle(extracting ? ChatFormatting.GREEN : ChatFormatting.YELLOW));
 	}
 
 	private static ItemStack[] snapshot(AbstractFurnaceMenu menu) {
@@ -202,31 +296,31 @@ public final class FurnaceAutomation {
 	}
 
 	/** Client-side pickup blip on the UI channel, so the in-game "UI" volume slider controls it. */
-	private static void playPickup(boolean into) {
-		float volume = into ? 0.5f : 0.8f;
-		float pitch = into ? 0.75f : 1.35f;
+	private static void playPickup(boolean inserting) {
+		float volume = inserting ? 0.5f : 0.8f;
+		float pitch = inserting ? 0.75f : 1.35f;
 		Minecraft.getInstance().getSoundManager()
 			.play(SimpleSoundInstance.forUI(SoundEvents.ITEM_PICKUP, pitch, volume));
 	}
 
-	/** Slot of the selected hotbar stack inside the furnace menu (one click per tick). */
-	private static int[] planInsert(AbstractFurnaceMenu menu, LocalPlayer player) {
+	/** Slot of the selected hotbar stack inside the furnace menu. */
+	private static int selectedHotbarSlot(AbstractFurnaceMenu menu, LocalPlayer player) {
 		int selected = player.getInventory().getSelectedSlot();
 		for (int i = 0; i < menu.slots.size(); i++) {
 			Slot slot = menu.getSlot(i);
 			if (slot.container == player.getInventory() && slot.getContainerSlot() == selected) {
-				return new int[] { i };
+				return i;
 			}
 		}
-		return new int[0];
+		return -1;
 	}
 
 	/** Output, then the bucket exception, then input, then fuel (the original take order). */
-	private static int[] planExtract(AbstractFurnaceMenu menu) {
-		if (!menu.getSlot(OUTPUT).getItem().isEmpty()) return new int[] { OUTPUT };
-		if (menu.getSlot(FUEL).getItem().is(Items.BUCKET)) return new int[] { FUEL };
-		if (!menu.getSlot(INPUT).getItem().isEmpty()) return new int[] { INPUT };
-		return new int[] { FUEL };
+	private static int pickExtractSource(AbstractFurnaceMenu menu) {
+		if (!menu.getSlot(OUTPUT).getItem().isEmpty()) return OUTPUT;
+		if (menu.getSlot(FUEL).getItem().is(Items.BUCKET)) return FUEL;
+		if (!menu.getSlot(INPUT).getItem().isEmpty()) return INPUT;
+		return menu.getSlot(FUEL).getItem().isEmpty() ? -1 : FUEL;
 	}
 
 	/** Blacklist + smeltable/fuel check, evaluated on the client. */
@@ -253,8 +347,10 @@ public final class FurnaceAutomation {
 		phase = Phase.IDLE;
 		suppressScreen = false;
 		extracting = false;
-		clicks = null;
-		clickIndex = 0;
 		waitTicks = 0;
+		before = null;
+		sourceResolved = false;
+		extractSource = -1;
+		done = false;
 	}
 }
