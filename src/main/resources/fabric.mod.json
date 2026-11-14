@@ -3,13 +3,13 @@
 	"id": "touch-my-furnaces",
 	"version": "${version}",
 	"name": "Touch My Furnaces",
-	"description": "Load and empty furnaces with Shift + right-click — no GUI needed. Client-side.",
+	"description": "This is an example description! Tell everyone what your mod is about!",
 	"authors": [
-		"im_pwq"
+		"Me!"
 	],
 	"contact": {
-		"homepage": "https://github.com/im_pwq/touch-my-furnaces",
-		"sources": "https://github.com/im_pwq/touch-my-furnaces/tree/client-side"
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/touch-my-furnaces/icon.png",
